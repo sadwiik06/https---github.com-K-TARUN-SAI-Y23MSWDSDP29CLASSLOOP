@@ -42,7 +42,12 @@ const AuthPage = () => {
   
       // Store user data in localStorage
       localStorage.setItem('user', JSON.stringify(data.user));
-      
+      // Store token in localStorage
+      if (data.token) {
+        localStorage.setItem('token', data.token);
+      } else if (data.accessToken) {
+        localStorage.setItem('token', data.accessToken);
+      }
       toast.success(isLogin ? 'Login successful!' : 'Registration successful!');
       
       // Redirect based on role

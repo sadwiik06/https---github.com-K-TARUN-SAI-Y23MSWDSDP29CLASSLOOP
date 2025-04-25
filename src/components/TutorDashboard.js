@@ -16,6 +16,7 @@ const TutorDashboard = () => {
   const [loading, setLoading] = useState(false);
   const location = useLocation();
   const user = JSON.parse(localStorage.getItem('user'));
+  const [error, setError] = useState(null);
 
   // Get the current path to highlight active sidebar item
   const currentPath = location.pathname;
@@ -24,20 +25,34 @@ const TutorDashboard = () => {
     const fetchData = async () => {
       try {
         setLoading(true);
+        setError(null);
+        const user = JSON.parse(localStorage.getItem('user'));
+        const token = localStorage.getItem('token');
+        if (!user || !token) {
+          setError('User not authenticated. Please log in.');
+          setLoading(false);
+          return;
+        }
+        const config = {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        };
         // Fetch tutor's upcoming classes
-        const classesRes = await axios.get(`/api/classes/tutor/${user._id}`);
+        const classesRes = await axios.get(`/api/classes/tutor/${user._id}`, config);
         setUpcomingClasses(classesRes.data);
 
         // Fetch other dashboard data
-        const assignmentsRes = await axios.get(`/api/assignments/tutor/${user._id}`);
+        const assignmentsRes = await axios.get(`/api/assignments/tutor`, config);
         setAssignments(assignmentsRes.data);
 
-        const attendanceRes = await axios.get(`/api/attendance/tutor/${user._id}`);
+        const attendanceRes = await axios.get(`/api/attendance/tutor/${user._id}`, config);
         setAttendance(attendanceRes.data);
 
-        const studentsRes = await axios.get(`/api/students/tutor/${user._id}`);
+        const studentsRes = await axios.get(`/api/students/tutor/${user._id}`, config);
         setStudents(studentsRes.data);
       } catch (err) {
+        setError('Failed to fetch dashboard data. Please try again later.');
         console.error('Error fetching dashboard data:', err);
       } finally {
         setLoading(false);
@@ -46,6 +61,7 @@ const TutorDashboard = () => {
 
     fetchData();
   }, [user._id]);
+
 
   // Navigation items configuration
   const navItems = [
