@@ -1,130 +1,239 @@
 import React, { useState, useEffect } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
-import { FaBook, FaFileUpload, FaCalendarAlt, FaSearch, FaFilter, FaCheckCircle, FaUserGraduate, FaEdit } from 'react-icons/fa';
+import { 
+  FaBook, FaFileUpload, FaCalendarAlt, FaSearch, 
+  FaFilter, FaCheckCircle, FaUserGraduate, FaEdit,
+  FaSpinner, FaTimes, FaDownload
+} from 'react-icons/fa';
+import api from '../api';
 
 const TutorAssignmentsPage = () => {
   const [assignments, setAssignments] = useState([]);
+  const [classes, setClasses] = useState([]);
   const [filter, setFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  // Modals state
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showGradeModal, setShowGradeModal] = useState(false);
+  
+  // Form states
   const [newAssignment, setNewAssignment] = useState({
     title: '',
-    course: '',
     description: '',
+    class: '',
     dueDate: '',
     attachments: []
   });
+  const [gradeData, setGradeData] = useState({
+    grade: '',
+    feedback: ''
+  });
+  const [currentSubmission, setCurrentSubmission] = useState(null);
+  const [fileUploads, setFileUploads] = useState([]);
 
   useEffect(() => {
-    // Mock data - would come from API in real app
-    setAssignments([
-      {
-        id: 1,
-        title: 'Linear Algebra Problem Set',
-        course: 'Mathematics',
-        description: 'Complete problems 1-10 from chapter 5',
-        dueDate: '2023-06-15',
-        submissions: [
-          {
-            student: 'Alice Johnson',
-            file: 'alice_solution.pdf',
-            date: '2023-06-14',
-            grade: 'A',
-            comments: 'Excellent work'
-          },
-          {
-            student: 'Bob Williams',
-            file: 'bob_solution.pdf',
-            date: '2023-06-15',
-            grade: 'B',
-            comments: 'Good effort'
-          }
-        ],
-        attachments: ['problem_set.pdf']
-      },
-      {
-        id: 2,
-        title: 'Machine Learning Essay',
-        course: 'Computer Science',
-        description: 'Write a 2000-word essay on neural networks',
-        dueDate: '2023-06-20',
-        submissions: [
-          {
-            student: 'Alice Johnson',
-            file: 'alice_essay.pdf',
-            date: '2023-06-19',
-            grade: null,
-            comments: ''
-          }
-        ],
-        attachments: ['essay_guidelines.pdf']
-      },
-      {
-        id: 3,
-        title: 'Physics Lab Report',
-        course: 'Physics',
-        description: 'Complete lab report for experiment 3',
-        dueDate: '2023-06-10',
-        submissions: [
-          {
-            student: 'Alice Johnson',
-            file: 'alice_lab.pdf',
-            date: '2023-06-09',
-            grade: 'B+',
-            comments: 'Well documented'
-          },
-          {
-            student: 'Bob Williams',
-            file: 'bob_lab.pdf',
-            date: '2023-06-10',
-            grade: 'A-',
-            comments: 'Thorough analysis'
-          }
-        ],
-        attachments: ['lab_manual.pdf']
-      }
+// Remove manual token addition from individual requests and trust the interceptor
+const fetchData = async () => {
+  try {
+    setIsLoading(true);
+    const user = JSON.parse(localStorage.getItem('user'));
+    
+    if (!user || !user.token) {
+      setError('Authentication token not found. Please login again.');
+      setIsLoading(false);
+      return;
+    }
+
+    const [classesRes, assignmentsRes] = await Promise.all([
+      api.get(`/classes/tutor/${user._id}`),
+      api.get('/assignments/tutor')
     ]);
+
+    setClasses(classesRes.data);
+    setAssignments(assignmentsRes.data);
+  } catch (err) {
+    setError(err.response?.data?.message || 'Failed to load data');
+    // Handle 401 specifically
+    if (err.response?.status === 401) {
+      // Redirect to login or refresh token
+      localStorage.removeItem('user');
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+    }
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+    fetchData();
   }, []);
 
   const filteredAssignments = assignments.filter(assignment => {
-    if (filter === 'graded' && assignment.submissions.some(s => !s.grade)) return false;
-    if (filter === 'ungraded' && !assignment.submissions.some(s => !s.grade)) return false;
+    // Filter by grade status
+    if (filter === 'graded') {
+      return assignment.submissions.every(s => s.grade);
+    }
+    if (filter === 'ungraded') {
+      return assignment.submissions.some(s => !s.grade);
+    }
+    // Filter by search term
     if (searchTerm && !assignment.title.toLowerCase().includes(searchTerm.toLowerCase())) {
       return false;
     }
     return true;
   });
 
-  const handleGradeSubmission = (assignmentId, studentName, grade, comments) => {
-    setAssignments(assignments.map(assignment => 
-      assignment.id === assignmentId ? {
-        ...assignment,
-        submissions: assignment.submissions.map(sub => 
-          sub.student === studentName ? { ...sub, grade, comments } : sub
-        )
-      } : assignment
-    ));
+  const handleFileUpload = (e) => {
+    const files = Array.from(e.target.files);
+    setFileUploads(files);
   };
 
-  const handleCreateAssignment = () => {
-    const newId = Math.max(...assignments.map(a => a.id)) + 1;
-    setAssignments([
-      ...assignments,
-      {
-        id: newId,
-        ...newAssignment,
-        submissions: []
-      }
-    ]);
-    setShowCreateModal(false);
+  const removeUploadedFile = (index) => {
+    const newFiles = [...fileUploads];
+    newFiles.splice(index, 1);
+    setFileUploads(newFiles);
+  };
+
+  const handleCreateAssignment = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const formData = new FormData();
+      
+      // Append basic fields
+      formData.append('title', newAssignment.title);
+      formData.append('description', newAssignment.description);
+      formData.append('classId', newAssignment.class);
+      formData.append('dueDate', newAssignment.dueDate);
+      
+      // Append files
+      fileUploads.forEach(file => {
+        formData.append('attachments', file);
+      });
+
+          const response = await api.post('/assignments', formData, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'multipart/form-data'
+            }
+          });
+
+      setAssignments([...assignments, response.data]);
+      setShowCreateModal(false);
+      resetCreateForm();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to create assignment');
+    }
+  };
+
+  const resetCreateForm = () => {
     setNewAssignment({
       title: '',
-      course: '',
       description: '',
+      class: '',
       dueDate: '',
       attachments: []
     });
+    setFileUploads([]);
   };
+
+  const openGradeModal = (submission) => {
+    setCurrentSubmission(submission);
+    setGradeData({
+      grade: submission.grade || '',
+      feedback: submission.tutorFeedback || ''
+    });
+    setShowGradeModal(true);
+  };
+
+  const handleGradeSubmission = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await api.put(
+        `/submissions/${currentSubmission._id}/grade`,
+        gradeData,
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+
+      // Update local state
+      setAssignments(assignments.map(a => {
+        if (a._id === currentSubmission.assignment) {
+          const updatedSubmissions = a.submissions.map(s => 
+            s._id === currentSubmission._id ? response.data : s
+          );
+          return { ...a, submissions: updatedSubmissions };
+        }
+        return a;
+      }));
+
+      setShowGradeModal(false);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to grade submission');
+    }
+  };
+
+  const downloadAttachment = async (filename) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await api.get(`/assignments/download/${filename}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob'
+      });
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err) {
+      alert('Failed to download file: ' + (err.response?.data?.message || err.message));
+    }
+  };
+
+  const downloadSubmission = async (submission) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await api.get(
+        `/assignments/submissions/download/${submission.file.filename}`, 
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          responseType: 'blob'
+        }
+      );
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', submission.file.originalname);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err) {
+      alert('Failed to download submission: ' + (err.response?.data?.message || err.message));
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="d-flex justify-content-center align-items-center" style={{ height: '80vh' }}>
+        <FaSpinner className="spinner" size={30} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="alert alert-danger m-4">
+        {error}
+      </div>
+    );
+  }
 
   return (
     <div className="assignments-container">
@@ -145,7 +254,7 @@ const TutorAssignmentsPage = () => {
 
         {/* Filters and Search */}
         <div className="row mb-4">
-          <div className="col-md-6">
+          <div className="col-md-6 mb-3 mb-md-0">
             <div className="input-group">
               <span className="input-group-text bg-white">
                 <FaSearch />
@@ -181,42 +290,49 @@ const TutorAssignmentsPage = () => {
         <div className="row">
           {filteredAssignments.length > 0 ? (
             filteredAssignments.map(assignment => (
-              <div key={assignment.id} className="col-md-6 col-lg-4 mb-4">
+              <div key={assignment._id} className="col-md-6 col-lg-4 mb-4">
                 <div className="card h-100 shadow-sm">
                   <div className="card-header bg-white">
                     <div className="d-flex justify-content-between align-items-center">
                       <h5 className="mb-0">{assignment.title}</h5>
                       <span className="badge bg-info">
-                        {assignment.submissions.length} Submissions
+                        {(assignment.submissions?.length ?? 0)} Submission{(assignment.submissions?.length ?? 0) !== 1 ? 's' : ''}
                       </span>
                     </div>
-                    <small className="text-muted">{assignment.course}</small>
+                    <small className="text-muted">{assignment.class?.title}</small>
                   </div>
                   <div className="card-body">
                     <p className="card-text">{assignment.description}</p>
+                    
+                    {/* Assignment Materials */}
                     <div className="mb-3">
                       <h6>Materials:</h6>
                       <ul className="list-unstyled">
                         {assignment.attachments.map((file, index) => (
-                          <li key={index}>
-                            <a href="#" className="text-decoration-none">
-                              <FaFileUpload className="me-2" />
-                              {file}
-                            </a>
+                          <li key={index} className="mb-2">
+                            <button 
+                              className="btn btn-link text-decoration-none p-0 text-start d-flex align-items-center"
+                              onClick={() => downloadAttachment(file.filename)}
+                            >
+                              <FaFileUpload className="me-2 flex-shrink-0" />
+                              <span className="text-truncate">{file.originalname}</span>
+                            </button>
                           </li>
                         ))}
                       </ul>
                     </div>
+                    
+                    {/* Submissions */}
                     <div className="mb-3">
                       <h6>Submissions:</h6>
-                      {assignment.submissions.length > 0 ? (
+                      {(assignment.submissions?.length ?? 0) > 0 ? (
                         <div className="list-group">
                           {assignment.submissions.map((sub, index) => (
-                            <div key={index} className="list-group-item p-2">
-                              <div className="d-flex justify-content-between">
-                                <div>
-                                  <FaUserGraduate className="me-2" />
-                                  <strong>{sub.student}</strong>
+                            <div key={index} className="list-group-item p-3">
+                              <div className="d-flex justify-content-between align-items-center mb-2">
+                                <div className="d-flex align-items-center">
+                                  <FaUserGraduate className="me-2 text-primary" />
+                                  <strong>{sub.student?.name}</strong>
                                 </div>
                                 {sub.grade ? (
                                   <span className="badge bg-success">{sub.grade}</span>
@@ -224,32 +340,42 @@ const TutorAssignmentsPage = () => {
                                   <span className="badge bg-warning text-dark">Pending</span>
                                 )}
                               </div>
-                              <div className="mt-1">
-                                <small className="text-muted">{sub.file} (Submitted on {sub.date})</small>
-                              </div>
-                              {sub.comments && (
-                                <div className="mt-1 small">{sub.comments}</div>
-                              )}
-                              {!sub.grade && (
+                              
+                              <div className="mb-2">
                                 <button 
-                                  className="btn btn-sm btn-outline-primary mt-2 w-100"
-                                  onClick={() => {
-                                    const grade = prompt("Enter grade:");
-                                    const comments = prompt("Enter comments:");
-                                    if (grade) {
-                                      handleGradeSubmission(assignment.id, sub.student, grade, comments);
-                                    }
-                                  }}
+                                  className="btn btn-link text-decoration-none p-0 d-flex align-items-center"
+                                  onClick={() => downloadSubmission(sub)}
                                 >
-                                  <FaEdit className="me-1" />
-                                  Grade
+                                  <FaDownload className="me-2 flex-shrink-0" />
+                                  <span className="text-truncate">
+                                    {sub.file.originalname}
+                                  </span>
                                 </button>
+                                <small className="text-muted d-block mt-1">
+                                  Submitted on {new Date(sub.submittedAt).toLocaleDateString()}
+                                </small>
+                              </div>
+                              
+                              {sub.tutorFeedback && (
+                                <div className="alert alert-light mt-2 mb-2">
+                                  <strong>Your Feedback:</strong> {sub.tutorFeedback}
+                                </div>
                               )}
+                              
+                              <button 
+                                className="btn btn-sm btn-outline-primary w-100 mt-2"
+                                onClick={() => openGradeModal(sub)}
+                              >
+                                <FaEdit className="me-1" />
+                                {sub.grade ? 'Update Grade' : 'Grade Submission'}
+                              </button>
                             </div>
                           ))}
                         </div>
                       ) : (
-                        <p className="text-muted">No submissions yet</p>
+                        <div className="alert alert-light">
+                          No submissions yet
+                        </div>
                       )}
                     </div>
                   </div>
@@ -257,11 +383,13 @@ const TutorAssignmentsPage = () => {
                     <div className="d-flex justify-content-between align-items-center">
                       <div>
                         <FaCalendarAlt className="me-2 text-muted" />
-                        <small className="text-muted">Due: {assignment.dueDate}</small>
+                        <small className="text-muted">
+                          Due: {new Date(assignment.dueDate).toLocaleDateString()}
+                        </small>
                       </div>
-                      <button className="btn btn-sm btn-outline-secondary">
-                        View Details
-                      </button>
+                      <small className="text-muted">
+                        Created: {new Date(assignment.createdAt).toLocaleDateString()}
+                      </small>
                     </div>
                   </div>
                 </div>
@@ -270,7 +398,7 @@ const TutorAssignmentsPage = () => {
           ) : (
             <div className="col-12 text-center py-5">
               <h4 className="text-muted">No assignments found</h4>
-              <p>Try adjusting your filters or search term</p>
+              <p>Try adjusting your filters or create a new assignment</p>
             </div>
           )}
         </div>
@@ -278,72 +406,116 @@ const TutorAssignmentsPage = () => {
 
       {/* Create Assignment Modal */}
       {showCreateModal && (
-        <div className="modal show" style={{ display: 'block', backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="modal-dialog">
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-lg">
             <div className="modal-content">
               <div className="modal-header">
                 <h5 className="modal-title">Create New Assignment</h5>
                 <button 
                   type="button" 
                   className="btn-close" 
-                  onClick={() => setShowCreateModal(false)}
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    resetCreateForm();
+                  }}
+                  aria-label="Close"
                 ></button>
               </div>
               <div className="modal-body">
-                <div className="mb-3">
-                  <label className="form-label">Title</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    value={newAssignment.title}
-                    onChange={(e) => setNewAssignment({...newAssignment, title: e.target.value})}
-                  />
+                <div className="row">
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label">Title*</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={newAssignment.title}
+                      onChange={(e) => setNewAssignment({...newAssignment, title: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label">Class*</label>
+                    <select
+                      className="form-select"
+                      value={newAssignment.class}
+                      onChange={(e) => setNewAssignment({...newAssignment, class: e.target.value})}
+                      required
+                    >
+                      <option value="">Select a class</option>
+                      {classes.map(c => (
+                        <option key={c._id} value={c._id}>{c.title}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
+                
                 <div className="mb-3">
-                  <label className="form-label">Course</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    value={newAssignment.course}
-                    onChange={(e) => setNewAssignment({...newAssignment, course: e.target.value})}
-                  />
-                </div>
-                <div className="mb-3">
-                  <label className="form-label">Description</label>
-                  <textarea 
-                    className="form-control" 
-                    rows="3"
+                  <label className="form-label">Description*</label>
+                  <textarea
+                    className="form-control"
+                    rows={4}
                     value={newAssignment.description}
                     onChange={(e) => setNewAssignment({...newAssignment, description: e.target.value})}
-                  ></textarea>
-                </div>
-                <div className="mb-3">
-                  <label className="form-label">Due Date</label>
-                  <input 
-                    type="date" 
-                    className="form-control" 
-                    value={newAssignment.dueDate}
-                    onChange={(e) => setNewAssignment({...newAssignment, dueDate: e.target.value})}
+                    required
                   />
                 </div>
-                <div className="mb-3">
-                  <label className="form-label">Attachments (comma separated)</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    value={newAssignment.attachments.join(', ')}
-                    onChange={(e) => setNewAssignment({
-                      ...newAssignment, 
-                      attachments: e.target.value.split(',').map(s => s.trim())
-                    })}
-                  />
+                
+                <div className="row">
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label">Due Date*</label>
+                    <input
+                      type="datetime-local"
+                      className="form-control"
+                      value={newAssignment.dueDate}
+                      onChange={(e) => setNewAssignment({...newAssignment, dueDate: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label">Attachments</label>
+                    <input
+                      type="file"
+                      className="form-control"
+                      onChange={handleFileUpload}
+                      multiple
+                      accept=".pdf,.doc,.docx,.txt,.zip,.jpg,.jpeg,.png"
+                    />
+                    <small className="form-text text-muted">
+                      Max 10MB per file (PDF, DOC, TXT, ZIP, Images)
+                    </small>
+                  </div>
                 </div>
+                
+                {/* Uploaded files preview */}
+                {fileUploads.length > 0 && (
+                  <div className="mb-3">
+                    <label className="form-label">Selected Files:</label>
+                    <div className="list-group">
+                      {fileUploads.map((file, index) => (
+                        <div key={index} className="list-group-item d-flex justify-content-between align-items-center">
+                          <span className="text-truncate" style={{ maxWidth: '80%' }}>
+                            {file.name}
+                          </span>
+                          <button 
+                            className="btn btn-sm btn-outline-danger"
+                            onClick={() => removeUploadedFile(index)}
+                          >
+                            <FaTimes />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="modal-footer">
                 <button 
                   type="button" 
                   className="btn btn-secondary" 
-                  onClick={() => setShowCreateModal(false)}
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    resetCreateForm();
+                  }}
                 >
                   Cancel
                 </button>
@@ -351,8 +523,89 @@ const TutorAssignmentsPage = () => {
                   type="button" 
                   className="btn btn-primary" 
                   onClick={handleCreateAssignment}
+                  disabled={!newAssignment.title || !newAssignment.class || !newAssignment.description || !newAssignment.dueDate}
                 >
                   Create Assignment
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Grade Submission Modal */}
+      {showGradeModal && (
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">Grade Submission</h5>
+                <button 
+                  type="button" 
+                  className="btn-close" 
+                  onClick={() => setShowGradeModal(false)}
+                  aria-label="Close"
+                ></button>
+              </div>
+              <div className="modal-body">
+                <div className="mb-3">
+                  <label className="form-label">Student</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={currentSubmission?.student?.name || ''}
+                    readOnly
+                  />
+                </div>
+                
+                <div className="mb-3">
+                  <label className="form-label">Assignment</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={currentSubmission?.assignment?.title || ''}
+                    readOnly
+                  />
+                </div>
+                
+                <div className="mb-3">
+                  <label className="form-label">Grade*</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={gradeData.grade}
+                    onChange={(e) => setGradeData({...gradeData, grade: e.target.value})}
+                    placeholder="A, B+, C-, etc."
+                    required
+                  />
+                </div>
+                
+                <div className="mb-3">
+                  <label className="form-label">Feedback</label>
+                  <textarea
+                    className="form-control"
+                    rows={4}
+                    value={gradeData.feedback}
+                    onChange={(e) => setGradeData({...gradeData, feedback: e.target.value})}
+                    placeholder="Provide constructive feedback..."
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button 
+                  type="button" 
+                  className="btn btn-secondary" 
+                  onClick={() => setShowGradeModal(false)}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="button" 
+                  className="btn btn-primary" 
+                  onClick={handleGradeSubmission}
+                  disabled={!gradeData.grade}
+                >
+                  Submit Grade
                 </button>
               </div>
             </div>

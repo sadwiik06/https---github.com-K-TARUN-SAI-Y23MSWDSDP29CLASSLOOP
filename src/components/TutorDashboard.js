@@ -6,7 +6,7 @@ import {
 } from 'react-icons/fa';
 import { BsGraphUp, BsClipboardData } from 'react-icons/bs';
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api';
 
 const TutorDashboard = () => {
   const [upcomingClasses, setUpcomingClasses] = useState([]);
@@ -15,37 +15,73 @@ const TutorDashboard = () => {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(false);
   const location = useLocation();
-  const user = JSON.parse(localStorage.getItem('user'));
+  const [authChecked, setAuthChecked] = useState(false);
 
   // Get the current path to highlight active sidebar item
   const currentPath = location.pathname;
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
 
   useEffect(() => {
+    // Safely get user data
+    const userData = JSON.parse(localStorage.getItem('user'));
+    const tokenData = localStorage.getItem('token');
+    
+    if (!userData || !tokenData) {
+      window.location.href = '/auth';
+      return;
+    }
+    
+    setUser(userData);
+    setToken(tokenData);
+    setAuthChecked(true);
+  }, []);
+
+  useEffect(() => {
+    if (!authChecked || !user?._id || !token) return;
+
     const fetchData = async () => {
       try {
         setLoading(true);
-        // Fetch tutor's upcoming classes
-        const classesRes = await axios.get(`/api/classes/tutor/${user._id}`);
+        
+        const [classesRes, assignmentsRes, attendanceRes, studentsRes] = await Promise.all([
+          api.get(`/classes/tutor/${user._id}`),
+          api.get('/assignments/tutor'),
+          api.get(`/attendance/tutor/${user._id}`),
+          api.get(`/students/tutor/${user._id}`)
+        ]);
+
         setUpcomingClasses(classesRes.data);
-
-        // Fetch other dashboard data
-        const assignmentsRes = await axios.get(`/api/assignments/tutor/${user._id}`);
         setAssignments(assignmentsRes.data);
-
-        const attendanceRes = await axios.get(`/api/attendance/tutor/${user._id}`);
         setAttendance(attendanceRes.data);
-
-        const studentsRes = await axios.get(`/api/students/tutor/${user._id}`);
         setStudents(studentsRes.data);
       } catch (err) {
         console.error('Error fetching dashboard data:', err);
+        if (err.response?.status === 401) {
+          localStorage.clear();
+          window.location.href = '/login';
+        }
       } finally {
         setLoading(false);
       }
     };
 
     fetchData();
-  }, [user._id]);
+  }, [authChecked, user?._id, token]);
+
+  if (!authChecked || loading) {
+    return (
+      <div className="d-flex justify-content-center align-items-center" style={{ height: '100vh' }}>
+        <div className="spinner-border text-primary" role="status">
+          <span className="visually-hidden">Loading...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null; // Will redirect from useEffect
+  }
 
   // Navigation items configuration
   const navItems = [

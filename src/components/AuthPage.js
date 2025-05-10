@@ -36,22 +36,30 @@ const AuthPage = () => {
   
     try {
       const url = isLogin ? '/api/v1/auth/login' : '/api/v1/auth/register';
-      const { data } = await axios.post(url, formData, {
+      console.log('Submitting to URL:', url, 'with data:', formData); // Debug log
+      const postData = isLogin ? { email: formData.email, password: formData.password } : formData;
+      const { data } = await axios.post(url, postData, {
         withCredentials: true
       });
+      console.log('Response data:', data); // Debug log
   
-      // Store user data in localStorage
-      localStorage.setItem('user', JSON.stringify(data.user));
+      // Store user data and token in localStorage
+      localStorage.setItem('user', JSON.stringify({ ...data.user, token: data.token }));
+      localStorage.setItem('token', data.token); // Store token separately for api.js
+      console.log('Stored user in localStorage:', localStorage.getItem('user')); // Debug log
       
       toast.success(isLogin ? 'Login successful!' : 'Registration successful!');
       
       // Redirect based on role
       if (data.user.role === 'tutor') {
+        console.log('Navigating to tutor dashboard'); // Debug log
         navigate('/tutor-dashboard');
       } else {
+        console.log('Navigating to student dashboard'); // Debug log
         navigate('/student-dashboard');
       }
     } catch (error) {
+      console.error('Login/Register error:', error); // Debug log
       // Error handling
     } finally {
       setLoading(false);
