@@ -43,11 +43,22 @@ const VideoConferencePage = () => {
 
   useEffect(() => {
     const userData = JSON.parse(localStorage.getItem('user'));
+    const token = localStorage.getItem('token');
+    console.log('Socket connection token:', token);
     setUser(userData);
     setError(null);
 
-    // Initialize socket connection
-    socketRef.current = io(process.env.REACT_APP_API_URL || 'http://localhost:5000');
+    // Initialize socket connection with auth token
+    socketRef.current = io(process.env.REACT_APP_API_URL || 'http://localhost:5000', {
+      auth: {
+        token: token
+      }
+    });
+
+    socketRef.current.on('connect_error', (err) => {
+      console.error('Socket connection error:', err.message);
+      setError('Socket connection failed: ' + err.message);
+    });
 
     // Get user media
     navigator.mediaDevices.getUserMedia({ 

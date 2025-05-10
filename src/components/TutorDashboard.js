@@ -15,7 +15,12 @@ const TutorDashboard = () => {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(false);
   const location = useLocation();
+<<<<<<< HEAD
   const [authChecked, setAuthChecked] = useState(false);
+=======
+  const user = JSON.parse(localStorage.getItem('user'));
+  const [error, setError] = useState(null);
+>>>>>>> b4b2c8c1abf4516ff065ddb8b69d14ed5b04e531
 
   // Get the current path to highlight active sidebar item
   const currentPath = location.pathname;
@@ -43,6 +48,7 @@ const TutorDashboard = () => {
     const fetchData = async () => {
       try {
         setLoading(true);
+<<<<<<< HEAD
         
         const [classesRes, assignmentsRes, attendanceRes, studentsRes] = await Promise.all([
           api.get(`/classes/tutor/${user._id}`),
@@ -54,8 +60,36 @@ const TutorDashboard = () => {
         setUpcomingClasses(classesRes.data);
         setAssignments(assignmentsRes.data);
         setAttendance(attendanceRes.data);
+=======
+        setError(null);
+        const user = JSON.parse(localStorage.getItem('user'));
+        const token = localStorage.getItem('token');
+        if (!user || !token) {
+          setError('User not authenticated. Please log in.');
+          setLoading(false);
+          return;
+        }
+        const config = {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        };
+        // Fetch tutor's upcoming classes
+        const classesRes = await axios.get(`/api/classes/tutor/${user._id}`, config);
+        setUpcomingClasses(classesRes.data);
+
+        // Fetch other dashboard data
+        const assignmentsRes = await axios.get(`/api/assignments/tutor`, config);
+        setAssignments(assignmentsRes.data);
+
+        const attendanceRes = await axios.get(`/api/attendance/tutor/${user._id}`, config);
+        setAttendance(attendanceRes.data);
+
+        const studentsRes = await axios.get(`/api/students/tutor/${user._id}`, config);
+>>>>>>> b4b2c8c1abf4516ff065ddb8b69d14ed5b04e531
         setStudents(studentsRes.data);
       } catch (err) {
+        setError('Failed to fetch dashboard data. Please try again later.');
         console.error('Error fetching dashboard data:', err);
         if (err.response?.status === 401) {
           localStorage.clear();
@@ -82,6 +116,7 @@ const TutorDashboard = () => {
   if (!user) {
     return null; // Will redirect from useEffect
   }
+
 
   // Navigation items configuration
   const navItems = [
